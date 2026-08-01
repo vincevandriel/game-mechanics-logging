@@ -39,7 +39,10 @@ public enum InitialSeed {
                 encounterNumber: index + 1,
                 stepCount: count,
                 movementMode: .walking,
-                submittedAt: now.addingTimeInterval(Double(index) / 1000.0),
+                // These historical counts have no original timestamps. Stable
+                // whole-second offsets preserve their order and round-trip
+                // exactly through JSON on every supported Apple platform.
+                submittedAt: now.addingTimeInterval(Double(index)),
                 measurementUncertainty: 1,
                 source: source
             )
