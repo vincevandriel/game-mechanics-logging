@@ -9,7 +9,7 @@ The app stores raw observations exactly as entered. It deliberately contains no 
 - Swift and SwiftUI, Apple system frameworks only
 - iPhone deployment target: iOS 15.0
 - Designed for iOS 15 through iOS 26
-- Project toolchain target: stable Xcode 26.x, Swift 6.2 compiler in Swift 5 language mode, iOS 26 SDK
+- Verified toolchain: stable Xcode 26.6 (build 17F113), Swift 6.2 compiler in Swift 5 language mode, iOS 26.5 SDK
 - Bundle identifier: `com.vincent.adventurebarencounterlogger`
 - No packages, pods, app extensions, unusual entitlements, accounts, or network dependency for logging
 
@@ -17,7 +17,7 @@ The app stores raw observations exactly as entered. It deliberately contains no 
 
 You do not need to own a Mac to build this project. The included manual GitHub Actions workflow runs the Xcode build, XCTest suite, unsigned Release build, IPA packaging, and archive verification on a GitHub-hosted macOS runner. It then makes the verified IPA downloadable from a Windows browser. Windows still cannot compile an iOS `.app` locally because Apple does not provide Xcode or the iOS SDK for Windows; the cloud runner supplies that required compilation environment.
 
-This repository was assembled on Windows. A real Xcode run and generated IPA require triggering the cloud workflow (recommended below) or using a separate macOS/Xcode machine. Do not claim a release passed those stages until that run is green. The workflow and packaging script fail closed and independently verify the required IPA path.
+This repository was assembled on Windows and then compiled and tested by the included macOS cloud workflow. The verified release run completed 62 XCTest cases with zero failures, built the unsigned generic-device Release app with Xcode 26.6, packaged the IPA, and independently verified the required archive path. The workflow and packaging script fail closed; rerun them after any source change before treating a replacement IPA as verified.
 
 ## What is included
 
@@ -540,7 +540,7 @@ Use either the Windows-triggered GitHub workflow or the equivalent local macOS c
 - There is no transfer retry queue. iOS may suspend a transfer when the app backgrounds, but failure never deletes local data; retry with a manual export.
 - The PC receiver has no automatic retention policy. Raw uploads and SQLite storage grow until the user archives or removes them; keep independent PC backups before doing so.
 - LiveContainer manages guest signing, permissions, and containers differently from normal iOS installation. Its current upstream documentation is authoritative.
-- Windows cannot run Xcode or XCTest locally. The included GitHub workflow supplies the macOS/Xcode environment, but it requires a GitHub repository, internet access, available Actions usage, and one manual workflow run before an actual IPA exists.
+- Windows cannot run Xcode or XCTest locally. The included GitHub workflow supplies the macOS/Xcode environment, but regenerating a verified IPA requires a GitHub repository, internet access, available Actions usage, and a manual workflow run.
 - A green cloud build verifies compilation, automated tests, and package structure; final LiveContainer import and an on-device smoke test still require the user's iPhone.
 
 The logging loop itself remains fully offline: `+` for each successful tile movement, **Submit** at encounter, and immediately continue.

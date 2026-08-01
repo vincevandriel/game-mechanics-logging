@@ -117,7 +117,10 @@ class LoggerHTTPTests(unittest.TestCase):
 
         with self.assertRaises(HTTPError) as context:
             urlopen(self.base_url + "/api/state", timeout=2)
-        self.assertEqual(context.exception.code, 404)
+        try:
+            self.assertEqual(context.exception.code, 404)
+        finally:
+            context.exception.close()
 
         request = Request(
             self.base_url + "/api/state",

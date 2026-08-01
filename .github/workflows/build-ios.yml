@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Check out project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select a stable Xcode 26 installation
         shell: bash
@@ -125,7 +125,7 @@ jobs:
             -project AdventureBarEncounterLogger/AdventureBarEncounterLogger.xcodeproj \
             -scheme AdventureBarEncounterLogger \
             -configuration Debug \
-            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }},arch=arm64" \
             -resultBundlePath "$RUNNER_TEMP/TestResults/AdventureBarEncounterLogger.xcresult" \
             clean test 2>&1 | tee "$RUNNER_TEMP/xcode-test.log"
 
@@ -149,7 +149,7 @@ jobs:
           shasum -a 256 "$IPA" | tee "dist/AdventureBarEncounterLogger.ipa.sha256"
 
       - name: Upload verified IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AdventureBarEncounterLogger-IPA
           path: |
@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AdventureBarEncounterLogger-build-diagnostics
           path: |
