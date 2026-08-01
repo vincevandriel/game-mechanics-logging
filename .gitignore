@@ -1,0 +1,25 @@
+# Xcode user state and build products
+DerivedData/
+build/
+dist/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.ipa
+
+# Swift/Xcode generated files
+.DS_Store
+*.swp
+*.xccheckout
+*.xcscmblueprint
+
+# Python receiver artifacts
+__pycache__/
+*.py[cod]
+received_uploads/
+AdventureBarUploads/
+SafariLoggerData/
+*.secret
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
