@@ -92,7 +92,7 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.state.sourceStoreID, initialSourceID)
         XCTAssertEqual(store.state.sourceMutationSequence, 1)
 
-        let relaunched = try AppStore(persistenceService: environment.persistence, now: { fixedNow })
+        let relaunched = try AppStore(persistenceService: environment.persistence, now: { self.fixedNow })
         XCTAssertEqual(relaunched.currentCount, 0)
         XCTAssertEqual(relaunched.observations(for: InitialSeed.loggerSessionID), [observation])
     }
