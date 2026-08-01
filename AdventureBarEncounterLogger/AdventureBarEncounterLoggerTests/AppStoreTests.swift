@@ -112,7 +112,7 @@ final class AppStoreTests: XCTestCase {
         AutomaticSyncURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "http://203.0.113.10:8765/upload")
             XCTAssertNotNil(request.value(forHTTPHeaderField: ReceiverRequestSigner.signatureHeader))
-            XCTAssertNotNil(request.httpBody)
+            XCTAssertNotNil(requestBodyData(request))
             // The synchronous submit must have committed the store before the
             // independent network task is able to report an upload.
             XCTAssertTrue(FileManager.default.fileExists(atPath: environment.persistence.primaryStoreURL.path))

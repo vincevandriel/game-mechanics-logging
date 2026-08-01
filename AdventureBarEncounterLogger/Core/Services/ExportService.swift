@@ -316,7 +316,9 @@ public final class ExportService: @unchecked Sendable {
 
 public enum RFC4180 {
     public static func escapedField(_ value: String) -> String {
-        let requiresQuotes = value.contains(",") || value.contains("\"") || value.contains("\r") || value.contains("\n")
+        let requiresQuotes = value.contains(",")
+            || value.contains("\"")
+            || value.unicodeScalars.contains(where: { $0 == "\r" || $0 == "\n" })
         guard requiresQuotes else { return value }
         return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
     }

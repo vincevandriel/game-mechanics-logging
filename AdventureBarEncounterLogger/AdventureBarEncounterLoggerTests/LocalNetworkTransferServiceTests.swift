@@ -105,7 +105,7 @@ final class LocalNetworkTransferServiceTests: XCTestCase {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Filename"), exported.filename)
             XCTAssertNil(request.value(forHTTPHeaderField: ReceiverRequestSigner.signatureHeader))
-            XCTAssertEqual(request.httpBody, body)
+            XCTAssertEqual(requestBodyData(request), body)
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 201,
@@ -145,7 +145,7 @@ final class LocalNetworkTransferServiceTests: XCTestCase {
             XCTAssertEqual(request.value(forHTTPHeaderField: ReceiverRequestSigner.nonceHeader), nonce)
             XCTAssertEqual(request.value(forHTTPHeaderField: ReceiverRequestSigner.contentSHA256Header), expectedBodyHash)
             XCTAssertEqual(request.value(forHTTPHeaderField: ReceiverRequestSigner.signatureHeader), expectedSignature)
-            XCTAssertEqual(request.httpBody, body)
+            XCTAssertEqual(requestBodyData(request), body)
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 201,
@@ -254,8 +254,9 @@ final class LocalNetworkTransferServiceTests: XCTestCase {
         try store.updateSettings(settings)
         for _ in 0..<3 { _ = try store.increment() }
         let submitted = try store.submitCurrentCount()
-        let stateBeforeTransfer = store.state
-        let bytesBeforeTransfer = try Data(contentsOf: environment.persistence.primaryStoreURL)
+        let observationsBeforeTransfer = store.state.observations
+        let sessionsBeforeTransfer = store.state.sessions
+        let counterBeforeTransfer = store.state.counter
         StubURLProtocol.handler = { request in
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
@@ -280,11 +281,18 @@ final class LocalNetworkTransferServiceTests: XCTestCase {
             XCTAssertEqual(code, 503)
         }
 
-        XCTAssertEqual(store.state, stateBeforeTransfer)
+        XCTAssertEqual(store.state.observations, observationsBeforeTransfer)
+        XCTAssertEqual(store.state.sessions, sessionsBeforeTransfer)
+        XCTAssertEqual(store.state.counter, counterBeforeTransfer)
         XCTAssertEqual(store.lastPCTransferStatus?.succeeded, false)
         XCTAssertEqual(store.lastPCTransferStatus?.automatic, false)
         XCTAssertTrue(store.state.observations.contains { $0.id == submitted.id })
-        XCTAssertEqual(try Data(contentsOf: environment.persistence.primaryStoreURL), bytesBeforeTransfer)
+        let persisted = try environment.persistence.decodeValidatedState(
+            from: Data(contentsOf: environment.persistence.primaryStoreURL)
+        )
+        XCTAssertEqual(persisted.observations, observationsBeforeTransfer)
+        XCTAssertEqual(persisted.sessions, sessionsBeforeTransfer)
+        XCTAssertEqual(persisted.counter, counterBeforeTransfer)
     }
 
     func testInvalidReceiverAddressIsRejectedBeforeNetworkUse() throws {

@@ -30,7 +30,10 @@ public enum RFC4180Parser {
     }
 
     public static func parse(text: String) -> [ParsedCSVRecord] {
-        let characters = Array(text)
+        // Parse Unicode scalars rather than Characters. Swift treats CRLF as one
+        // extended grapheme cluster, so a Character parser cannot reliably see
+        // the separate RFC 4180 CR and LF delimiters.
+        let scalars = Array(text.unicodeScalars)
         var records: [ParsedCSVRecord] = []
         var fields: [String] = []
         var field = ""
@@ -53,12 +56,12 @@ public enum RFC4180Parser {
             rowStartLine = currentLine
         }
 
-        while index < characters.count {
-            let character = characters[index]
+        while index < scalars.count {
+            let character = scalars[index]
             if inQuotes {
                 if character == "\"" {
-                    if index + 1 < characters.count && characters[index + 1] == "\"" {
-                        field.append("\"")
+                    if index + 1 < scalars.count && scalars[index + 1] == "\"" {
+                        field.unicodeScalars.append("\"")
                         index += 2
                         continue
                     }
@@ -67,7 +70,7 @@ public enum RFC4180Parser {
                     index += 1
                     continue
                 }
-                field.append(character)
+                field.unicodeScalars.append(character)
                 if character == "\n" { currentLine += 1 }
                 index += 1
                 continue
@@ -82,7 +85,7 @@ public enum RFC4180Parser {
                     continue
                 }
                 if character == "\r" || character == "\n" {
-                    if character == "\r", index + 1 < characters.count, characters[index + 1] == "\n" { index += 1 }
+                    if character == "\r", index + 1 < scalars.count, scalars[index + 1] == "\n" { index += 1 }
                     currentLine += 1
                     index += 1
                     finishRecord()
@@ -90,7 +93,7 @@ public enum RFC4180Parser {
                     continue
                 }
                 rowError = rowError ?? "Unexpected character after a closing quote."
-                field.append(character)
+                field.unicodeScalars.append(character)
                 justClosedQuote = false
                 index += 1
                 continue
@@ -102,7 +105,7 @@ public enum RFC4180Parser {
                     inQuotes = true
                 } else {
                     rowError = rowError ?? "Quote found in an unquoted field."
-                    field.append(character)
+                    field.unicodeScalars.append(character)
                 }
                 index += 1
             case ",":
@@ -110,13 +113,13 @@ public enum RFC4180Parser {
                 field = ""
                 index += 1
             case "\r", "\n":
-                if character == "\r", index + 1 < characters.count, characters[index + 1] == "\n" { index += 1 }
+                if character == "\r", index + 1 < scalars.count, scalars[index + 1] == "\n" { index += 1 }
                 currentLine += 1
                 index += 1
                 finishRecord()
                 rowStartLine = currentLine
             default:
-                field.append(character)
+                field.unicodeScalars.append(character)
                 index += 1
             }
         }
@@ -128,4 +131,3 @@ public enum RFC4180Parser {
         return records
     }
 }
-

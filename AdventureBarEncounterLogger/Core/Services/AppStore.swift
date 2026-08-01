@@ -729,11 +729,14 @@ public final class AppStore: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                await MainActor.run {
-                    self?.lastErrorMessage = "Data was saved, but export snapshots could not be updated: \(error.localizedDescription)"
-                }
+                let message = "Data was saved, but export snapshots could not be updated: \(error.localizedDescription)"
+                await self?.reportSnapshotFailure(message)
             }
         }
+    }
+
+    private func reportSnapshotFailure(_ message: String) {
+        lastErrorMessage = message
     }
 
     func waitForPendingSnapshotRefreshForTesting() async {

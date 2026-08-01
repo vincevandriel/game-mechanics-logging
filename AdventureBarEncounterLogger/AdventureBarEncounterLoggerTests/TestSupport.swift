@@ -1,6 +1,22 @@
 import Foundation
 @testable import AdventureBarEncounterLogger
 
+func requestBodyData(_ request: URLRequest) -> Data? {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return nil }
+
+    stream.open()
+    defer { stream.close() }
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+        let count = stream.read(&buffer, maxLength: buffer.count)
+        if count < 0 { return nil }
+        if count == 0 { return result }
+        result.append(contentsOf: buffer.prefix(count))
+    }
+}
+
 struct TestEnvironment {
     let rootURL: URL
     let storeURL: URL
