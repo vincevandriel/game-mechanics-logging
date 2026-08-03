@@ -102,9 +102,9 @@ For example, undoing a submitted 38 after four more steps can restore 42. Undo n
 
 ## Sessions and records
 
-The **Records** tab owns all lists and editing UI so the Counter stays uncluttered. It supports session creation, renaming, activation, archiving/restoring, confirmed deletion, and per-session export. Sessions may contain a game version, dungeon/location, map-area description, testing-condition notes, general notes, and timestamps.
+The **Records** tab owns all lists and editing UI so the Counter stays uncluttered. It supports session creation, renaming, activation, archiving/restoring, confirmed deletion, and per-session export. Sessions may contain a game version, dungeon/location, map-area description, testing-condition notes, general notes, and timestamps. Changing the active session while a count is unfinished requires an explicit choice to preserve or reset that count. Creating and activating a new session provides the same choices plus an option to create it without activating it. The active session cannot be archived or deleted until its unfinished count has been resolved.
 
-Observation rows show encounter number, exact raw step count, movement mode, timestamp, and a questionable-data indicator. Records can be searched, filtered by mode, and sorted by encounter number, timestamp, count, or movement mode. Editing may change count, mode, uncertainty, note, or questionable status/reason. A count/mode edit appends an audit entry containing the previous and new values, timestamp, and optional reason, so the original raw value remains recoverable. Deletion requires confirmation, and the temporary deletion history can restore a record when still compatible.
+Observation rows show encounter number, exact raw step count, movement mode, timestamp, and a questionable-data indicator. Records can be searched, filtered by mode, and sorted by encounter number, timestamp, count, or movement mode. Swipe **Flag** to mark a record questionable or apply the standard **Mark as Test - Exclude from Analysis** reason and note without changing its raw count or movement mode. Editing may change count, mode, uncertainty, note, or questionable status/reason. Each edit or quick flag appends an audit entry containing the previous and new raw values, timestamp, and reason, so the original raw value remains recoverable. Deletion requires confirmation, and the temporary deletion history can restore a record when still compatible.
 
 Encounter sequence numbers are assigned within a session. Imports and edits preserve source identifiers and raw values instead of normalizing or renumbering them silently.
 
@@ -120,7 +120,7 @@ The Settings tab includes:
 - confirmation before Undo replaces a nonzero counter
 - export snapshot creation after every submission
 - last-used export format
-- PC receiver address, port, shared secret, HTTP/HTTPS choice, automatic-transfer option, and connection test
+- PC receiver address, port, shared secret, HTTP/HTTPS choice, automatic-transfer option, and authenticated-upload verification
 - active session
 - system, light, or dark appearance
 
@@ -298,7 +298,7 @@ The iPhone and computer must be on the same private Wi-Fi/LAN, with wireless cli
 - macOS Wi-Fi: run `ipconfig getifaddr en0`. If empty, inspect `ifconfig` for the active interface.
 - Linux: run `hostname -I` and use the private LAN address.
 
-Do not enter `127.0.0.1`, `0.0.0.0`, or the router's address in the app. In **Settings → PC Receiver**, select **HTTP**, enter the PC's private address without `http://`, enter `8765`, enter the same secret if authenticated mode is running, and tap **Save Receiver Settings**. **Test PC Connection** calls unsigned `GET /health`; it does not validate the secret. A manual signed upload is the end-to-end authentication test.
+Do not enter `127.0.0.1`, `0.0.0.0`, or the router's address in the app. In **Settings → PC Receiver**, select **HTTP**, enter the PC's private address without `http://`, enter `8765`, enter the same secret used by the authenticated receiver, and tap **Save Receiver Settings**. The interface identifies unsaved fields and explains which prerequisite keeps automatic transfer disabled. Tap **Verify Authenticated Upload** to send an all-sessions JSON snapshot through the real signed `/upload` endpoint. Success verifies the address, protocol, port, shared secret, receiver clock window, validation, and storage path together; it does not merely test the unsigned health endpoint.
 
 When Windows asks whether Python may accept connections, allow it on **Private networks only**. If no prompt appears, open an administrator PowerShell and add a narrowly scoped private-profile rule manually:
 
@@ -326,7 +326,7 @@ In the app, enter the public IP/hostname without a URL path, select **HTTP**, en
 
 For a manual transfer, create the desired CSV or JSON in **Export**, tap the PC send action once, and confirm both the in-app result and receiver's printed saved path. The receiver stores raw bytes before they are used for local database indexing.
 
-**Automatically Send Current Data to PC** is off by default and can be enabled only after saving a receiver address and valid upload secret. When enabled, the app first commits locally, then attempts to send an all-sessions JSON snapshot containing observations and session metadata, without opening a share sheet or interrupting Counter. It sends after submission and refreshes after an undo, edit, deletion/restoration, import, or session-data change so PC `is_current` membership can catch up even if logging stops immediately afterward. Changing appearance, haptics, or other ordinary settings does not transmit the dataset. A newer data change supersedes an older in-flight automatic snapshot. It does not continuously transmit in the background. Settings retains the last automatic/manual PC-transfer result and time across later counter taps. A failed automatic attempt leaves the observation, local database, and local export functionality intact; because there is no retry queue, use a later manual export when delivery must be confirmed.
+**Automatically Send Current Data to PC** is off by default and can be enabled only after saving a receiver address and valid upload secret. When enabled, the app first commits locally, then attempts to send an all-sessions JSON snapshot containing observations and session metadata, without opening a share sheet or interrupting Counter. It sends after submission and refreshes after an undo, edit, deletion/restoration, import, active-session switch, or session-data change so PC `is_current` membership can catch up even if logging stops immediately afterward. Changing appearance, haptics, or other ordinary settings does not transmit the dataset. A newer data change supersedes an older in-flight automatic snapshot. It does not continuously transmit in the background. Settings retains the last automatic/manual PC-transfer result and time across later counter taps. A failed automatic attempt leaves the observation, local database, and local export functionality intact; because there is no retry queue, use **Verify Authenticated Upload** or a later manual export when delivery must be confirmed.
 
 ## Optional temporary Safari logger on Windows
 
@@ -468,7 +468,7 @@ xcodebuild \
   test
 ```
 
-The suite covers first-run integrity/idempotence, counter and mode persistence, submit/zero handling, undo variants, mixed intervals, sessions, RFC 4180 escaping, CSV/JSON export, JSON/CSV import validation and duplicate handling, atomic-store recovery, audit preservation, snapshots, and network failure without local data loss. A release should not be distributed unless this command exits zero.
+The suite covers first-run integrity/idempotence, counter and mode persistence, submit/zero handling, undo variants, mixed intervals, protected session switching with unfinished counts, quick test/questionable flags, RFC 4180 escaping, CSV/JSON export, JSON/CSV import validation and duplicate handling, atomic-store recovery, audit preservation, snapshots, and network failure without local data loss. A release should not be distributed unless this command exits zero.
 
 ## Optional: package the unsigned IPA locally on macOS
 
