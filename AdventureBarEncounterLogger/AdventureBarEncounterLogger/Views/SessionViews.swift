@@ -7,6 +7,8 @@ struct SessionManagementView: View {
     @State private var showingCreateSession = false
     @State private var editingSession: EncounterSession?
     @State private var deletingSession: EncounterSession?
+    @State private var requestedActiveSession: EncounterSession?
+    @State private var showingSessionSwitchOptions = false
     @State private var presentedError: PresentedError?
 
     var body: some View {
@@ -56,6 +58,23 @@ struct SessionManagementView: View {
                     },
                     secondaryButton: .cancel()
                 )
+            }
+            .confirmationDialog(
+                "Switch Active Session?",
+                isPresented: $showingSessionSwitchOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Reset Count and Switch", role: .destructive) {
+                    resolveSessionSwitch(.resetCurrentCount)
+                }
+                Button("Preserve Count and Switch") {
+                    resolveSessionSwitch(.preserveCurrentCount)
+                }
+                Button("Cancel", role: .cancel) {
+                    requestedActiveSession = nil
+                }
+            } message: {
+                Text("The unfinished count is \(store.currentCount). Choose explicitly whether it belongs with the new active session.")
             }
             .presentedErrorAlert($presentedError)
         }
@@ -143,8 +162,24 @@ struct SessionManagementView: View {
     }
 
     private func makeActive(_ session: EncounterSession) {
+        guard store.state.activeSessionID != session.id else { return }
+        if store.currentCount > 0 {
+            requestedActiveSession = session
+            showingSessionSwitchOptions = true
+            return
+        }
+        activate(session, resolution: nil)
+    }
+
+    private func resolveSessionSwitch(_ resolution: SessionSwitchResolution) {
+        guard let session = requestedActiveSession else { return }
+        requestedActiveSession = nil
+        activate(session, resolution: resolution)
+    }
+
+    private func activate(_ session: EncounterSession, resolution: SessionSwitchResolution?) {
         do {
-            try store.setActiveSession(id: session.id)
+            try store.setActiveSession(id: session.id, resolution: resolution)
             FeedbackController.play(
                 .selection,
                 hapticsEnabled: store.state.settings.hapticsEnabled,
@@ -184,6 +219,7 @@ struct SessionEditorView: View {
     @State private var mapAreaDescription: String
     @State private var testingConditionNotes: String
     @State private var notes: String
+    @State private var showingCreationOptions = false
     @State private var presentedError: PresentedError?
 
     init(session: EncounterSession?) {
@@ -229,6 +265,24 @@ struct SessionEditorView: View {
                         .disabled(trimmedName.isEmpty || gameVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .confirmationDialog(
+                "Create and Activate Session?",
+                isPresented: $showingCreationOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Reset Count and Create", role: .destructive) {
+                    createNewSession(makeActive: true, resolution: .resetCurrentCount)
+                }
+                Button("Preserve Count and Create") {
+                    createNewSession(makeActive: true, resolution: .preserveCurrentCount)
+                }
+                Button("Create Without Activating") {
+                    createNewSession(makeActive: false, resolution: nil)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The unfinished count is \(store.currentCount). Preserving it deliberately assigns that interval to the new session.")
+            }
             .presentedErrorAlert($presentedError)
         }
         .navigationViewStyle(.stack)
@@ -239,6 +293,10 @@ struct SessionEditorView: View {
     }
 
     private func save() {
+        if originalSession == nil && store.currentCount > 0 {
+            showingCreationOptions = true
+            return
+        }
         do {
             if var session = originalSession {
                 session.name = trimmedName
@@ -248,19 +306,28 @@ struct SessionEditorView: View {
                 session.testingConditionNotes = testingConditionNotes.nilIfBlank
                 session.notes = notes.nilIfBlank
                 try store.updateSession(session)
-            } else {
-                _ = try store.createSession(
-                    name: trimmedName,
-                    gameVersion: gameVersion.trimmingCharacters(in: .whitespacesAndNewlines),
-                    dungeon: dungeon.nilIfBlank,
-                    mapAreaDescription: mapAreaDescription.nilIfBlank,
-                    testingConditionNotes: testingConditionNotes.nilIfBlank,
-                    notes: notes.nilIfBlank
-                )
-            }
+            } else { createNewSession(makeActive: true, resolution: nil); return }
             dismiss()
         } catch {
             presentedError = PresentedError(title: "Unable to Save Session", error: error)
+        }
+    }
+
+    private func createNewSession(makeActive: Bool, resolution: SessionSwitchResolution?) {
+        do {
+            _ = try store.createSession(
+                name: trimmedName,
+                gameVersion: gameVersion.trimmingCharacters(in: .whitespacesAndNewlines),
+                dungeon: dungeon.nilIfBlank,
+                mapAreaDescription: mapAreaDescription.nilIfBlank,
+                testingConditionNotes: testingConditionNotes.nilIfBlank,
+                notes: notes.nilIfBlank,
+                makeActive: makeActive,
+                activationResolution: resolution
+            )
+            dismiss()
+        } catch {
+            presentedError = PresentedError(title: "Unable to Create Session", error: error)
         }
     }
 }

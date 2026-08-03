@@ -382,6 +382,92 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.state.activeSessionID, InitialSeed.loggerSessionID)
     }
 
+    func testSessionSwitchRequiresExplicitResolutionForUnfinishedCount() throws {
+        let environment = try TestEnvironment()
+        defer { environment.remove() }
+        let store = try makeStore(in: environment)
+        try store.changeMode(to: .running)
+        for _ in 0..<4 { _ = try store.increment() }
+
+        XCTAssertThrowsError(try store.setActiveSession(id: InitialSeed.initialSessionID)) { error in
+            XCTAssertEqual(error as? AppStoreError, .sessionChangeRequiresConfirmation)
+        }
+        XCTAssertEqual(store.state.activeSessionID, InitialSeed.loggerSessionID)
+        XCTAssertEqual(store.currentCount, 4)
+        XCTAssertEqual(store.currentIntervalMode, .running)
+
+        try store.setActiveSession(id: InitialSeed.initialSessionID, resolution: .preserveCurrentCount)
+        XCTAssertEqual(store.state.activeSessionID, InitialSeed.initialSessionID)
+        XCTAssertEqual(store.currentCount, 4)
+        XCTAssertEqual(store.currentIntervalMode, .running)
+
+        let restored = try makeStore(in: environment)
+        XCTAssertEqual(restored.state.activeSessionID, InitialSeed.initialSessionID)
+        XCTAssertEqual(restored.currentCount, 4)
+        XCTAssertEqual(restored.currentIntervalMode, .running)
+    }
+
+    func testSessionSwitchCanExplicitlyResetUnfinishedCount() throws {
+        let environment = try TestEnvironment()
+        defer { environment.remove() }
+        let store = try makeStore(in: environment)
+        try store.changeMode(to: .running)
+        for _ in 0..<3 { _ = try store.increment() }
+
+        try store.setActiveSession(id: InitialSeed.initialSessionID, resolution: .resetCurrentCount)
+
+        XCTAssertEqual(store.state.activeSessionID, InitialSeed.initialSessionID)
+        XCTAssertEqual(store.currentCount, 0)
+        XCTAssertEqual(store.selectedBaseMode, .running)
+        XCTAssertEqual(store.currentIntervalMode, .running)
+    }
+
+    func testActiveSessionCannotBeArchivedOrDeletedWithUnfinishedCount() throws {
+        let environment = try TestEnvironment()
+        defer { environment.remove() }
+        let store = try makeStore(in: environment)
+        _ = try store.increment()
+
+        XCTAssertThrowsError(try store.setSessionArchived(id: InitialSeed.loggerSessionID, isArchived: true)) { error in
+            XCTAssertEqual(error as? AppStoreError, .activeSessionHasUnfinishedCount)
+        }
+        XCTAssertThrowsError(try store.deleteSession(id: InitialSeed.loggerSessionID)) { error in
+            XCTAssertEqual(error as? AppStoreError, .activeSessionHasUnfinishedCount)
+        }
+        XCTAssertEqual(store.state.activeSessionID, InitialSeed.loggerSessionID)
+        XCTAssertEqual(store.currentCount, 1)
+        XCTAssertTrue(store.state.sessions.contains { $0.id == InitialSeed.loggerSessionID })
+    }
+
+    func testQuickTestFlagPreservesRawValueAndAddsDurableAuditInformation() throws {
+        let environment = try TestEnvironment()
+        defer { environment.remove() }
+        var store = try makeStore(in: environment)
+        _ = try store.increment()
+        let original = try store.submitCurrentCount()
+
+        let flagged = try store.markObservationQuestionable(
+            id: original.id,
+            reason: "Test submission; not a real measurement. Exclude from all analysis.",
+            noteToAppend: "[EXCLUDE FROM ANALYSIS] Connectivity test."
+        )
+
+        XCTAssertEqual(flagged.id, original.id)
+        XCTAssertEqual(flagged.stepCount, original.stepCount)
+        XCTAssertEqual(flagged.movementMode, original.movementMode)
+        XCTAssertTrue(flagged.isQuestionable)
+        XCTAssertEqual(flagged.questionableReason, "Test submission; not a real measurement. Exclude from all analysis.")
+        XCTAssertEqual(flagged.note, "[EXCLUDE FROM ANALYSIS] Connectivity test.")
+        XCTAssertEqual(flagged.auditHistory.count, 1)
+        XCTAssertEqual(flagged.auditHistory[0].previousStepCount, original.stepCount)
+        XCTAssertEqual(flagged.auditHistory[0].newStepCount, original.stepCount)
+        XCTAssertTrue(flagged.auditHistory[0].reason?.contains("Marked questionable") == true)
+
+        store = try makeStore(in: environment)
+        let persisted = try XCTUnwrap(store.state.observations.first { $0.id == original.id })
+        XCTAssertEqual(persisted, flagged)
+    }
+
     func testObservationEditAppendsRecoverableAuditHistoryAndPersistsIt() throws {
         let environment = try TestEnvironment()
         defer { environment.remove() }

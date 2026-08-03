@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var confirmsSecretReplacement = false
     @State private var isTestingConnection = false
     @State private var connectionStatus: ConnectionStatus?
+    @State private var requestedActiveSessionID: UUID?
+    @State private var showingSessionSwitchOptions = false
     @State private var presentedError: PresentedError?
 
     var body: some View {
@@ -101,7 +103,7 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     } else {
-                        Text("Signed uploads reject files that do not have this same secret. Copy it into the PC receiver configuration. The reachability test does not validate the secret.")
+                        Text("Signed uploads reject files that do not have this same secret. Copy it into the PC receiver configuration, then verify an authenticated upload.")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
@@ -112,19 +114,31 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Button("Save Receiver Settings", action: saveReceiverSettings)
+                    Button("Save Receiver Settings") {
+                        _ = saveReceiverSettings()
+                    }
                         .disabled(!receiverValuesAreValid)
 
-                    Button(action: testConnection) {
+                    Button(action: verifyAuthenticatedUpload) {
                         HStack {
-                            Text("Test PC Connection")
+                            Text("Verify Authenticated Upload")
                             Spacer()
                             if isTestingConnection {
                                 ProgressView()
                             }
                         }
                     }
-                    .disabled(!receiverValuesAreValid || isTestingConnection)
+                    .disabled(!receiverValuesAreValid || !receiverSecretIsConfiguredAndValid || isTestingConnection)
+
+                    if receiverSettingsHaveUnsavedChanges {
+                        Label("Receiver changes are not saved", systemImage: "exclamationmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundColor(.orange)
+                    } else if automaticSyncPrerequisitesAreStored {
+                        Label("Signed receiver settings are saved", systemImage: "checkmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundColor(.green)
+                    }
 
                     if let connectionStatus {
                         Label(connectionStatus.message, systemImage: connectionStatus.systemImage)
@@ -138,6 +152,11 @@ struct SettingsView: View {
                         isOn: settingBinding(\.automaticallySendSnapshotToPC)
                     )
                     .disabled(!automaticSyncPrerequisitesAreStored && !store.state.settings.automaticallySendSnapshotToPC)
+                    if !automaticSyncPrerequisitesAreStored && !store.state.settings.automaticallySendSnapshotToPC {
+                        Text("Save a receiver address, port, and valid 64-character upload secret before enabling automatic transfer.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.orange)
+                    }
                     Text("This is off by default and requires a saved signed receiver. It sends after submissions and record/session data changes. Every change is saved locally first, and a failed transfer never deletes local data.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
@@ -211,6 +230,23 @@ struct SettingsView: View {
             } message: {
                 Text("The PC receiver must be updated with the replacement before signed uploads will work again.")
             }
+            .confirmationDialog(
+                "Switch Active Session?",
+                isPresented: $showingSessionSwitchOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Reset Count and Switch", role: .destructive) {
+                    resolveActiveSessionChange(.resetCurrentCount)
+                }
+                Button("Preserve Count and Switch") {
+                    resolveActiveSessionChange(.preserveCurrentCount)
+                }
+                Button("Cancel", role: .cancel) {
+                    requestedActiveSessionID = nil
+                }
+            } message: {
+                Text("The unfinished count is \(store.currentCount). Choose explicitly whether it belongs with the selected session.")
+            }
             .presentedErrorAlert($presentedError)
         }
         .navigationViewStyle(.stack)
@@ -219,13 +255,7 @@ struct SettingsView: View {
     private var activeSessionBinding: Binding<UUID> {
         Binding(
             get: { store.state.activeSessionID },
-            set: { id in
-                do {
-                    try store.setActiveSession(id: id)
-                } catch {
-                    presentedError = PresentedError(title: "Unable to Select Session", error: error)
-                }
-            }
+            set: { requestActiveSessionChange($0) }
         )
     }
 
@@ -269,6 +299,21 @@ struct SettingsView: View {
             && ReceiverRequestSigner.isValidSecret(settings.pcReceiverUploadSecret, allowingEmpty: false)
     }
 
+    private var normalizedReceiverHost: String {
+        receiverHost
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "^https?://", with: "", options: [.regularExpression, .caseInsensitive])
+    }
+
+    private var receiverSettingsHaveUnsavedChanges: Bool {
+        guard let port = Int(receiverPort) else { return true }
+        let settings = store.state.settings
+        return normalizedReceiverHost != settings.pcReceiverHost
+            || port != settings.pcReceiverPort
+            || receiverScheme != settings.pcReceiverScheme
+            || normalizedReceiverSecret != settings.pcReceiverUploadSecret
+    }
+
     private func loadReceiverSettings() {
         let settings = store.state.settings
         let storedHost = settings.pcReceiverHost.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -286,11 +331,10 @@ struct SettingsView: View {
         receiverUploadSecret = settings.pcReceiverUploadSecret
     }
 
-    private func saveReceiverSettings() {
-        guard let port = Int(receiverPort), receiverValuesAreValid else { return }
-        let normalizedHost = receiverHost
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "^https?://", with: "", options: [.regularExpression, .caseInsensitive])
+    @discardableResult
+    private func saveReceiverSettings() -> Bool {
+        guard let port = Int(receiverPort), receiverValuesAreValid else { return false }
+        let normalizedHost = normalizedReceiverHost
         var settings = store.state.settings
         settings.pcReceiverHost = normalizedHost
         settings.pcReceiverPort = port
@@ -313,29 +357,29 @@ struct SettingsView: View {
                 systemImage: "checkmark.circle.fill",
                 isSuccess: true
             )
+            return true
         } catch {
             presentedError = PresentedError(title: "Unable to Save Receiver Address", error: error)
+            return false
         }
     }
 
-    private func testConnection() {
-        guard let port = Int(receiverPort), receiverValuesAreValid else { return }
-        saveReceiverSettings()
+    private func verifyAuthenticatedUpload() {
+        guard receiverValuesAreValid, receiverSecretIsConfiguredAndValid else { return }
+        guard saveReceiverSettings() else { return }
         connectionStatus = nil
         isTestingConnection = true
-        let configuration = ReceiverConfiguration(
-            scheme: receiverScheme,
-            host: receiverHost.replacingOccurrences(of: "^https?://", with: "", options: [.regularExpression, .caseInsensitive]),
-            port: port,
-            uploadSecret: normalizedReceiverSecret
-        )
 
         Task {
             do {
-                let message = try await LocalNetworkTransferService().testConnection(configuration: configuration)
+                let receipt = try await store.transferExport(
+                    selection: .allSessions,
+                    format: .json,
+                    content: .observationsAndSessionMetadata
+                )
                 await MainActor.run {
                     connectionStatus = ConnectionStatus(
-                        message: message,
+                        message: "Authenticated upload verified: \(receipt.message)",
                         systemImage: "checkmark.circle.fill",
                         isSuccess: true
                     )
@@ -344,13 +388,37 @@ struct SettingsView: View {
             } catch {
                 await MainActor.run {
                     connectionStatus = ConnectionStatus(
-                        message: error.localizedDescription,
+                        message: "Authenticated upload failed: \(error.localizedDescription)",
                         systemImage: "xmark.octagon.fill",
                         isSuccess: false
                     )
                     isTestingConnection = false
                 }
             }
+        }
+    }
+
+    private func requestActiveSessionChange(_ id: UUID) {
+        guard id != store.state.activeSessionID else { return }
+        if store.currentCount > 0 {
+            requestedActiveSessionID = id
+            showingSessionSwitchOptions = true
+        } else {
+            activateSession(id, resolution: nil)
+        }
+    }
+
+    private func resolveActiveSessionChange(_ resolution: SessionSwitchResolution) {
+        guard let id = requestedActiveSessionID else { return }
+        requestedActiveSessionID = nil
+        activateSession(id, resolution: resolution)
+    }
+
+    private func activateSession(_ id: UUID, resolution: SessionSwitchResolution?) {
+        do {
+            try store.setActiveSession(id: id, resolution: resolution)
+        } catch {
+            presentedError = PresentedError(title: "Unable to Select Session", error: error)
         }
     }
 }

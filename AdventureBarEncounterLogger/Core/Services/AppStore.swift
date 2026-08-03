@@ -5,6 +5,8 @@ public enum AppStoreError: LocalizedError, Equatable {
     case counterOverflow
     case zeroSubmissionRequiresConfirmation
     case modeChangeRequiresConfirmation
+    case sessionChangeRequiresConfirmation
+    case activeSessionHasUnfinishedCount
     case undoRequiresCurrentCountConfirmation
     case noUndoAvailable
     case noRedoAvailable
@@ -25,6 +27,8 @@ public enum AppStoreError: LocalizedError, Equatable {
         case .counterOverflow: return "The counter cannot be increased further."
         case .zeroSubmissionRequiresConfirmation: return "The current count is zero. Confirm before recording a zero-value observation."
         case .modeChangeRequiresConfirmation: return "Choose whether to reset or preserve the current count before switching movement mode."
+        case .sessionChangeRequiresConfirmation: return "Choose whether to reset or preserve the unfinished count before changing the active session."
+        case .activeSessionHasUnfinishedCount: return "Resolve the unfinished count before archiving or deleting the active session."
         case .undoRequiresCurrentCountConfirmation: return "Choose whether Undo should replace or add the current unfinished count."
         case .noUndoAvailable: return "There is no submitted observation available to undo in the active session."
         case .noRedoAvailable: return "There is no undo operation available to reverse."
@@ -330,9 +334,13 @@ public final class AppStore: ObservableObject {
         mapAreaDescription: String? = nil,
         testingConditionNotes: String? = nil,
         notes: String? = nil,
-        makeActive: Bool = true
+        makeActive: Bool = true,
+        activationResolution: SessionSwitchResolution? = nil
     ) throws -> EncounterSession {
         guard name.nilIfBlank != nil else { throw AppStoreError.sessionNameRequired }
+        if makeActive && state.counter.currentCount > 0 && activationResolution == nil {
+            throw AppStoreError.sessionChangeRequiresConfirmation
+        }
         let timestamp = now()
         let session = EncounterSession(
             id: makeUUID(),
@@ -350,6 +358,7 @@ public final class AppStore: ObservableObject {
         if makeActive {
             next.activeSessionID = session.id
             next.pendingUndo = nil
+            applySessionSwitchResolution(activationResolution, to: &next)
         }
         try commit(next, feedback: "Session created")
         refreshDerivedCopiesAfterMutation()
@@ -377,20 +386,26 @@ public final class AppStore: ObservableObject {
         try updateSession(session)
     }
 
-    public func setActiveSession(id: UUID) throws {
+    public func setActiveSession(id: UUID, resolution: SessionSwitchResolution? = nil) throws {
         guard let session = state.sessions.first(where: { $0.id == id }) else { throw AppStoreError.sessionNotFound(id) }
         guard !session.isArchived else { throw AppStoreError.archivedSessionCannotBeActive }
         guard id != state.activeSessionID else { return }
+        if state.counter.currentCount > 0 && resolution == nil {
+            throw AppStoreError.sessionChangeRequiresConfirmation
+        }
         var next = state
         next.activeSessionID = id
         next.pendingUndo = nil
+        applySessionSwitchResolution(resolution, to: &next)
         try commit(next, feedback: "Active session: \(session.name)")
+        refreshDerivedCopiesAfterMutation()
     }
 
     public func setSessionArchived(id: UUID, isArchived: Bool) throws {
         guard let index = state.sessions.firstIndex(where: { $0.id == id }) else { throw AppStoreError.sessionNotFound(id) }
         var next = state
         if isArchived && id == next.activeSessionID {
+            guard next.counter.currentCount == 0 else { throw AppStoreError.activeSessionHasUnfinishedCount }
             guard let replacement = next.sessions.first(where: { $0.id != id && !$0.isArchived }) else {
                 throw AppStoreError.cannotArchiveOnlyActiveSession
             }
@@ -405,6 +420,9 @@ public final class AppStore: ObservableObject {
 
     public func deleteSession(id: UUID) throws {
         guard state.sessions.contains(where: { $0.id == id }) else { throw AppStoreError.sessionNotFound(id) }
+        if id == state.activeSessionID && state.counter.currentCount > 0 {
+            throw AppStoreError.activeSessionHasUnfinishedCount
+        }
         var next = state
         next.sessions.removeAll { $0.id == id }
         next.observations.removeAll { $0.sessionID == id }
@@ -436,6 +454,37 @@ public final class AppStore: ObservableObject {
 
     public func observations(for sessionID: UUID) -> [EncounterObservation] {
         state.observations(for: sessionID)
+    }
+
+    @discardableResult
+    public func markObservationQuestionable(
+        id: UUID,
+        reason: String,
+        noteToAppend: String? = nil
+    ) throws -> EncounterObservation {
+        guard let observation = state.observations.first(where: { $0.id == id }) else {
+            throw AppStoreError.observationNotFound(id)
+        }
+        let appendedNote: String?
+        if let addition = noteToAppend?.nilIfBlank {
+            if let existing = observation.note?.nilIfBlank, !existing.contains(addition) {
+                appendedNote = "\(existing)\n\(addition)"
+            } else {
+                appendedNote = observation.note ?? addition
+            }
+        } else {
+            appendedNote = observation.note
+        }
+        return try updateObservation(
+            id: observation.id,
+            stepCount: observation.stepCount,
+            movementMode: observation.movementMode,
+            measurementUncertainty: observation.measurementUncertainty,
+            note: appendedNote,
+            isQuestionable: true,
+            questionableReason: reason,
+            editReason: "Marked questionable: \(reason)"
+        )
     }
 
     public func deletedObservations(for sessionID: UUID? = nil) -> [DeletedObservation] {
@@ -705,6 +754,16 @@ public final class AppStore: ObservableObject {
         if let index = state.sessions.firstIndex(where: { $0.id == id }) {
             state.sessions[index].lastModifiedAt = date
         }
+    }
+
+    private func applySessionSwitchResolution(
+        _ resolution: SessionSwitchResolution?,
+        to state: inout PersistentAppState
+    ) {
+        guard resolution == .resetCurrentCount else { return }
+        state.counter.currentCount = 0
+        state.counter.currentIntervalIsMixed = false
+        state.counter.lastChangedAt = now()
     }
 
     private func refreshDerivedCopiesAfterMutation() {

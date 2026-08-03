@@ -70,6 +70,11 @@ public enum ModeChangeResolution: Equatable, Sendable {
     case preserveAndMarkMixed
 }
 
+public enum SessionSwitchResolution: Equatable, Sendable {
+    case resetCurrentCount
+    case preserveCurrentCount
+}
+
 public enum UndoStrategy: Equatable, Sendable {
     case replace
     case addCurrentCount

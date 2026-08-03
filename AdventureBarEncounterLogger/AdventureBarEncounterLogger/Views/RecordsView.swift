@@ -36,6 +36,8 @@ struct RecordsView: View {
     @State private var searchText = ""
     @State private var editingObservation: EncounterObservation?
     @State private var deletingObservation: EncounterObservation?
+    @State private var qualityObservation: EncounterObservation?
+    @State private var showingQualityOptions = false
     @State private var showingSessions = false
     @State private var showingDeletedHistory = false
     @State private var presentedError: PresentedError?
@@ -69,6 +71,14 @@ struct RecordsView: View {
                                                 Label("Edit", systemImage: "pencil")
                                             }
                                             .tint(.accentColor)
+
+                                            Button {
+                                                qualityObservation = observation
+                                                showingQualityOptions = true
+                                            } label: {
+                                                Label("Flag", systemImage: "exclamationmark.triangle")
+                                            }
+                                            .tint(.orange)
                                         }
                                 }
                             }
@@ -133,6 +143,23 @@ struct RecordsView: View {
                     },
                     secondaryButton: .cancel()
                 )
+            }
+            .confirmationDialog(
+                "Flag Observation",
+                isPresented: $showingQualityOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Mark as Test - Exclude from Analysis") {
+                    markSelectedObservationAsTest()
+                }
+                Button("Mark Questionable") {
+                    markSelectedObservationQuestionable()
+                }
+                Button("Cancel", role: .cancel) {
+                    qualityObservation = nil
+                }
+            } message: {
+                Text("The raw value will remain unchanged. A quality reason and audit entry will be saved.")
             }
             .presentedErrorAlert($presentedError)
             .onAppear(perform: ensureSelection)
@@ -272,6 +299,33 @@ struct RecordsView: View {
 
     private func normalized(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func markSelectedObservationAsTest() {
+        guard let observation = qualityObservation else { return }
+        qualityObservation = nil
+        do {
+            _ = try store.markObservationQuestionable(
+                id: observation.id,
+                reason: "Test submission; not a real measurement. Exclude from all analysis.",
+                noteToAppend: "[EXCLUDE FROM ANALYSIS] Test submission; not a real encounter measurement."
+            )
+        } catch {
+            presentedError = PresentedError(title: "Unable to Mark Test Observation", error: error)
+        }
+    }
+
+    private func markSelectedObservationQuestionable() {
+        guard let observation = qualityObservation else { return }
+        qualityObservation = nil
+        do {
+            _ = try store.markObservationQuestionable(
+                id: observation.id,
+                reason: "Marked questionable from the Records list. Review the observation note."
+            )
+        } catch {
+            presentedError = PresentedError(title: "Unable to Mark Observation", error: error)
+        }
     }
 }
 
